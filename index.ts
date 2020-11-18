@@ -1,17 +1,22 @@
 import { Micro, MicroPlugin } from '@pestras/micro';
 import { WorkerMessage } from '@pestras/micro/workers';
+import * as http from 'http';
+import { type } from 'os';
 import * as SocketIO from 'socket.io';
 
 export interface SocketIOOptions {
   serverOptions?: SocketIO.ServerOptions;
   maxListeners?: number;
   adapter?: any;
+  port?: number;
+  host?: string;
 }
 
 /**
  * Socket IO namespace config interface
  */
 export interface IONamespace {
+  service: any;
   connect?: string;
   reconnect?: string;
   handshake?: string;
@@ -43,7 +48,7 @@ let serviceNamespaces: { [key: string]: IONamespace } = {};
 export function CONNECT(namespaces: string[] = ['default']) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].connect = key;
     }
   }
@@ -57,7 +62,7 @@ export function CONNECT(namespaces: string[] = ['default']) {
 export function RECONNECT(namespaces: string[] = ['default']) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].reconnect = key;
     }
   }
@@ -71,7 +76,7 @@ export function RECONNECT(namespaces: string[] = ['default']) {
 export function HANDSHAKE(namespaces: string[] = ['default']) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].handshake = key;
     }
   }
@@ -85,7 +90,7 @@ export function HANDSHAKE(namespaces: string[] = ['default']) {
 export function USE(namespaces: string[] = ['default']) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].use = key;
     }
   }
@@ -99,7 +104,7 @@ export function USE(namespaces: string[] = ['default']) {
 export function USESOCKET(namespaces: string[] = ['default']) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].useSocket = key;
     }
   }
@@ -113,7 +118,7 @@ export function USESOCKET(namespaces: string[] = ['default']) {
 export function EVENT(name?: string, namespaces: string[] = ["default"]) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].events = serviceNamespaces[namespace].events || {};
       serviceNamespaces[namespace].events[name] = key;
     }
@@ -128,7 +133,7 @@ export function EVENT(name?: string, namespaces: string[] = ["default"]) {
 export function DISCONNECT(namespaces: string[] = ['default']) {
   return (target: any, key: string) => {
     for (let namespace of namespaces) {
-      serviceNamespaces[namespace] = serviceNamespaces[namespace] || {};
+      serviceNamespaces[namespace] = serviceNamespaces[namespace] || { service: target.constructor };
       serviceNamespaces[namespace].disconnect = key;
     }
   }
@@ -137,14 +142,20 @@ export function DISCONNECT(namespaces: string[] = ['default']) {
 export class MicroSocket extends MicroPlugin {
   private namespaces = new Map<string, SocketIO.Server | SocketIO.Namespace>();
 
-  constructor(private _config: SocketIOOptions) {
+  constructor(private _config: SocketIOOptions, private _server?: http.Server | (() => http.Server)) {
     super();
   }
 
   async init() {
+    let server: http.Server;
+    let outSourceServer = !!this._server;
+
+    if (outSourceServer) server = typeof this._server === "function" ? this._server() : this._server;
+    else server = http.createServer();
+
     Micro.logger.info('initializing socketIO server');
     let ioOptions = Object.assign({ origin: '*:*' }, this._config ? this._config.serverOptions || {} : {});
-    let io = SocketIO(Micro.server, ioOptions);
+    let io = SocketIO(server, ioOptions);
     if (this._config && this._config.adapter) io.adapter(this._config.adapter);
     io.sockets.setMaxListeners(this._config ? this._config.maxListeners || 10 : 10);
 
@@ -153,10 +164,16 @@ export class MicroSocket extends MicroPlugin {
       this.namespaces.set(namespace, ns);
     }
 
-    // if (Micro.config.workers !== 0) initilizaSocketMessaging();
+    if (Micro.config.workers !== 0) this.initilizaSocketMessaging();
 
     if (!this.namespaces.has('default')) this.namespaces.set('default', io);
     Micro.logger.info('socketIO server initiatlized successfully');
+
+    if (!outSourceServer) {
+      let port = this._config.port || 3001;
+      let host = this._config.host || "0.0.0.0";
+      server.listen(port, host, () => Micro.logger.info(`socket server running on: ${host}:${port}`));
+    }
   }
   
   static publish(msg: SocketIOPublishMessage) {
@@ -196,6 +213,7 @@ export class MicroSocket extends MicroPlugin {
 
   private async initializeNamespace(io: SocketIO.Server, namespace: string, options: IONamespace) {
     let ns = namespace === 'default' ? io : io.of(`/${namespace}`);
+    let currService = Micro.getCurrentService(options.service) || Micro.service;
 
     if (options.handshake || options.use) {
       ns.use(async (socket, next) => {
@@ -206,22 +224,22 @@ export class MicroSocket extends MicroPlugin {
 
     ns.on('connection', socket => {
       if (options.connect)
-        try { Micro.service[options.connect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'connect' } }); }
+        try { currService[options.connect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'connect' } }); }
       if (options.reconnect)
         socket.on('connect', () => {
-          try { Micro.service[options.reconnect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'reconnect' } }) }
+          try { currService[options.reconnect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'reconnect' } }) }
         });
       if (options.useSocket)
         socket.use((packet, next) => {
-          try { Micro.service[options.useSocket](ns, packet, next); } catch (e) { Micro.logger.error(e, { event: { name: 'useSocket' } }) }
+          try { currService[options.useSocket](ns, packet, next); } catch (e) { Micro.logger.error(e, { event: { name: 'useSocket' } }) }
         });
       if (options.disconnect)
         socket.on('disconnect', () => {
-          try { Micro.service[options.disconnect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'disconnect' } }) }
+          try { currService[options.disconnect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'disconnect' } }) }
         });
       for (let event in options.events)
         socket.on(event, (...args) => {
-          try { Micro.service[options.events[event]](ns, socket, ...args); } catch (e) { Micro.logger.error(e, { event: { name: event, data: args } }) }
+          try { currService[options.events[event]](ns, socket, ...args); } catch (e) { Micro.logger.error(e, { event: { name: event, data: args } }) }
         });
     });
 

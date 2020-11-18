@@ -28,13 +28,40 @@ class test {}
 Micro.start(Test);
 ```
 
-**MicroRouter** class accepts a single optional argument **SocketIOOptions**.
+**MicroSocket** plugin accepts a two optional arguments:
+
+### SocketIOOptions
 
 Name | Type | default | Description
 --- | --- | --- | ---
 serverOptions | SocketIO.ServerOptions | null | see [socket.io docs](https://socket.io/docs/server-api/)
 maxListeners  | number  | 10 |
 adapter | any | null | SocketIO Adapter
+port | number | 3001 | Htto server port
+host | string | "0.0.0.0" | Http server host
+
+### Http Server
+
+**MicroSocket** can accept an http server as input to use instead of creating a new server;
+
+The argumant could be a server instance or function that returns the server instance, the plugin will call the function after it initialized, that is useful when we want to pass the server that is not available at the instantiating time.
+
+```ts
+import *  as http from 'http';
+import { SERVICE, Micro } from '@pestras/micro';
+import { MicroRouter } from '@pestras/micro-router;
+import { MicroSocket } from '@pestras/micro-socket;
+
+Micro.plugin(new MicroRouter();
+console.log(MicroRouter.server) // output: null
+Micro.plugin(new MicroSocket(null, () => MicroRouter.server)); // at initialize time the server does exist
+
+@SERVICE()
+class test {}
+
+Micro.start(Test);
+```
+
 
 ## CONNECT DECORATOR
 
@@ -171,6 +198,39 @@ class Publisher {
 
   @DISCONNECT(['blog'])
   blogSocketDisconnected(ns: SocketIO.Namespace, socket: SocketIO.Socket) {}
+}
+```
+
+## Subserveces
+
+Each subservice can have multiple namespaces, however namespaces may not be shared among several subservice.
+
+```ts
+// subserviceA.ts
+import { EVENT } from '@pestras/micro-socket';
+
+export class SubServiceA {
+
+  @EVENT('someevent', ['ns01'])
+  eventHandler(ns: SocketIO.Namespace, socket: SocketIO.Socket, ...args: any[]) {}
+
+  @EVENT('someevent', ['ns02'])
+  eventHandler(ns: SocketIO.Namespace, socket: SocketIO.Socket, ...args: any[]) {}
+}
+```
+
+```ts
+// subserviceB.ts
+import { EVENT } from '@pestras/micro-socket';
+
+export class SubServiceB {
+
+  @EVENT('someevent', ['ns03'])
+  eventHandler(ns: SocketIO.Namespace, socket: SocketIO.Socket, ...args: any[]) {}
+
+  // using same namespace 'ns02' in both SubServiceA and SubServiceB will cause unexpected behavior.
+  @EVENT('someevent', ['ns02'])
+  eventHandler(ns: SocketIO.Namespace, socket: SocketIO.Socket, ...args: any[]) {}
 }
 ```
 
