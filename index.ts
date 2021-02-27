@@ -141,6 +141,7 @@ export function DISCONNECT(namespaces: string[] = ['default']) {
 
 export class MicroSocket extends MicroPlugin {
   private namespaces = new Map<string, SocketIO.Server | SocketIO.Namespace>();
+  healthy = true;
 
   constructor(private _config: SocketIOOptions, private _server?: http.Server | (() => http.Server)) {
     super();
@@ -174,6 +175,9 @@ export class MicroSocket extends MicroPlugin {
       let host = this._config.host || "0.0.0.0";
       server.listen(port, host, () => Micro.logger.info(`socket server running on: ${host}:${port}`));
     }
+
+    this.ready = true;
+    this.live = true;
   }
   
   static publish(msg: SocketIOPublishMessage) {
