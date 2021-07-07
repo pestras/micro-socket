@@ -1,4 +1,4 @@
-# Pestras Micro Nats
+# Pestras Micro Socket.IO
 
 Pestras microservice plugin for socket.io server support.
 

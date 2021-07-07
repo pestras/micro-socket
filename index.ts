@@ -1,7 +1,6 @@
 import { Micro, MicroPlugin } from '@pestras/micro';
 import { WorkerMessage } from '@pestras/micro/workers';
 import * as http from 'http';
-import { type } from 'os';
 import * as SocketIO from 'socket.io';
 
 export interface SocketIOOptions {
@@ -228,22 +227,22 @@ export class MicroSocket extends MicroPlugin {
 
     ns.on('connection', socket => {
       if (options.connect)
-        try { currService[options.connect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'connect' } }); }
+        try { currService[options.connect](ns, socket); } catch (e) { Micro.logger.error(e, "event: connect"); }
       if (options.reconnect)
         socket.on('connect', () => {
-          try { currService[options.reconnect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'reconnect' } }) }
+          try { currService[options.reconnect](ns, socket); } catch (e) { Micro.logger.error(e, "event: reconnect") }
         });
       if (options.useSocket)
         socket.use((packet, next) => {
-          try { currService[options.useSocket](ns, packet, next); } catch (e) { Micro.logger.error(e, { event: { name: 'useSocket' } }) }
+          try { currService[options.useSocket](ns, packet, next); } catch (e) { Micro.logger.error(e, "event: useSocket") }
         });
       if (options.disconnect)
         socket.on('disconnect', () => {
-          try { currService[options.disconnect](ns, socket); } catch (e) { Micro.logger.error(e, { event: { name: 'disconnect' } }) }
+          try { currService[options.disconnect](ns, socket); } catch (e) { Micro.logger.error(e, "event: disconnect") }
         });
       for (let event in options.events)
         socket.on(event, (...args) => {
-          try { currService[options.events[event]](ns, socket, ...args); } catch (e) { Micro.logger.error(e, { event: { name: event, data: args } }) }
+          try { currService[options.events[event]](ns, socket, ...args); } catch (e) { Micro.logger.error(e, `event: ${event}`) }
         });
     });
 
